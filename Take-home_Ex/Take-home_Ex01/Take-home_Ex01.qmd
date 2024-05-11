@@ -1,0 +1,778 @@
+---
+title: "Take-home Exercise 1"
+author: "Xiao Fudi"
+date: "April 13, 2024"
+date-modified: "last-modified"
+
+execute:
+  warning: false
+  code-flow : true
+  output: html_document
+---
+
+# **Creating data visualisation beyond default**
+
+## **Setting the Scene**
+
+There are two major residential property market in Singapore, namely public and private housing. Public housing aims to meet the basic need of the general public with monthly household income less than or equal to S\$14,000. For families with monthly household income more than S\$14,000, they need to turn to the private residential market.
+
+## **Our Task**
+
+In this exercise, Exploratory Data Analysis (EDA) methods and ggplot functions are used to explore:
+
+-   the distribution of prices across different regions and residences types .
+
+-   the relationship between the price and types of residences and sub-market.
+
+## **The Data**
+
+A complete set of the private residential property transaction data from 1st January 2023 to 31st March 2024 are provided.
+
+![](images/clipboard-4277698943.png)
+
+# **1. Getting Started**
+
+## **1.1 Loading R packages**
+
+We load the following R packages using the `pacman::p_load()` function:
+
+```{r}
+
+pacman::p_load(tidyverse, ggrepel, patchwork, 
+               ggthemes, hrbrthemes,
+              ggridges, colorspace) 
+
+```
+
+-   **tidyverse**: Core collection of R packages designed for data science
+
+-   **ggrepel**: to provide geoms for **ggplot2** to repel overlapping text labels
+
+-   **ggthemes**: to use additional themes for **ggplot2**
+
+-   **patchwork**: to prepare composite figure created using **ggplot2**
+
+-   **hrbrthemes**: to provide typography-centric themes and theme components for **ggplot2**
+
+-   **ggridges**, a ggplot2 extension specially designed for plotting ridgeline plots
+
+-   **colorspace,** to provide a broad toolbox for selecting individual colors or color palettes, manipulating these colors, and employing them in various kinds of visualisations
+
+## **1.2 Importing data**
+
+The code chunk below imports the dataset into R environment by using [*`read_csv()`*](https://readr.tidyverse.org/reference/read_delim.html) function of [`readr`](https://readr.tidyverse.org/) package. **readr** is one of the tidyverse package.
+
+Read the individual CSV files into data frames. Check that the structure of each data frame is the same.
+
+```{r}
+RT_q1_2023 <- read_csv("data/ResidentialTransaction2023Q1.csv")
+```
+
+```{r}
+RT_q2_2023 <- read_csv("data/ResidentialTransaction2023Q2.csv")
+```
+
+```{r}
+RT_q3_2023 <- read_csv("data/ResidentialTransaction2023Q3.csv")
+```
+
+```{r}
+RT_q4_2023 <- read_csv("data/ResidentialTransaction2023Q4.csv")
+```
+
+```{r}
+RT_q1_2024 <- read_csv("data/ResidentialTransaction2024Q1.csv")
+```
+
+This is to conduct a preliminary exploration to understand the basic characteristics of the dataset. Notably, the 'Sale Date' column, which should ideally be a date type , it is read as a character (chr) type.
+
+::: callout-warning
+![](images/clipboard-224818948.png){width="380"}
+
+It's alerting that not all data may have been read into the R data frame correctly due to issues in the CSV file format or its contents. The data sets type have to be converted first before combine them into one.
+:::
+
+# **2. Data preparation**
+
+This process is to enhance the quality of the data and consequently the reliability of the analysis.
+
+## 2.1 Convert data type
+
+The 'Sale Date' column is read as a character (chr) type, we need to convert it as date type.
+
+```{r}
+
+RT_q1_2023 <- RT_q1_2023 %>% mutate(`Sale Date` = as.Date(`Sale Date`, format = "%d %b %Y"))
+RT_q2_2023 <- RT_q2_2023 %>% mutate(`Sale Date` = as.Date(`Sale Date`, format = "%d %b %Y"))
+RT_q3_2023 <- RT_q3_2023 %>% mutate(`Sale Date` = as.Date(`Sale Date`, format = "%d %b %Y"))
+RT_q4_2023 <- RT_q4_2023 %>% mutate(`Sale Date` = as.Date(`Sale Date`, format = "%d %b %Y"))
+RT_q1_2024 <- RT_q1_2024 %>% mutate(`Sale Date` = as.Date(`Sale Date`, format = "%d %b %Y"))
+
+```
+
+## **2.2 Combine the datasets and Check missing values**
+
+In our analysis, we need to merge multiple quarterly datasets into a single frame to perform a comprehensive review of the trends over time. To accomplish this, we use the *`bind_rows()`* function from the *`dplyr package`*. This function is highly efficient for appending data frames, especially when they share the same columns. By binding the rows of individual quarterly data frames, we can ensure a seamless and orderly consolidation of the data.
+
+```{r}
+RT_all <- bind_rows(RT_q1_2023, RT_q2_2023, RT_q3_2023, RT_q4_2023, RT_q1_2024)
+
+```
+
+Once we have combined the data frames into `RT_all`, it is important to verify the range of the data we are working with. We are particularly interested in the 'Sale Date' range to understand the temporal bounds of our dataset by the *`range()`* function .
+
+</details>
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+range(RT_all$`Sale Date`)
+
+```
+
+</details>
+
+Before delving into analyses, it is imperative to assess the completeness of the dataset.Count missing values for each column in the combined data frame. It shows only 6 missing values in the column of "Area (SQM)". Below is the summary of missing values for each column, generated using the *`summarise(across(everything(), ~ sum(is.na(.))))`* function, which allows us to count NA values across all columns efficiently.
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+
+missing_values_summary <- RT_all %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+
+missing_values_summary
+
+```
+
+## 2.3 Remove duplicates and Create new varaiables
+
+Upon assessment of our dataset, we have discerned a dual representation of area measurements: 'Area (SQFT)' and 'Area (SQM)'. We observed that the 'Area (SQM)' column contains missing values which may complicate our analyses. Given the completeness and sufficiency of the 'Area (SQFT)' data, we have opted to remove the 'Area (SQM)','Unit Price (\$ PSM)' column, and Nett Price(\$).
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+
+RT_new <- RT_all %>%
+  select(-'Unit Price ($ PSM)', -'Area (SQM)', -`Nett Price($)`)
+print(RT_new)
+
+```
+
+</details>
+
+As part of this analytics project, we need to organize the dates into quarters for better analysis and understanding of trends over time. By classifying the dates into quarters, we can identify seasonal patterns, track changes in performance or behavior, and make more informed decisions based on the insights gained from our analysis.
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+
+RT_new <- RT_new %>%
+  mutate(Quarter = case_when(
+    quarter(`Sale Date`) == 1 & year(`Sale Date`) == 2023 ~ "Q1 2023",
+    quarter(`Sale Date`) == 2 & year(`Sale Date`) == 2023 ~ "Q2 2023",
+    quarter(`Sale Date`) == 3 & year(`Sale Date`) == 2023 ~ "Q3 2023",
+    quarter(`Sale Date`) == 4 & year(`Sale Date`) == 2023 ~ "Q4 2023",
+    quarter(`Sale Date`) == 1 & year(`Sale Date`) == 2024 & month(`Sale Date`) %in% 1:3 ~ "Q1 2024",
+    TRUE ~ "Other"  
+  ))
+
+head(RT_new)
+
+```
+
+</details>
+
+There are few housing types in the data sets, which composed of private housing and public housing. Next we will conduct check on the property type for classification.To confirm the categorization and examine the property types present in our dataset, we employ the `unique()` function, which identifies distinct entries within the 'Property Type' column.
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+unique(RT_new$`Property Type`)
+```
+
+</details>
+
+In summary, Condominium, Terrace House, Executive Condominium, Semi-Detached House, and Detached House would be classified as Private Housing. Apartment is a Housing and Development Board (HDB) flat, which is public housing.
+
+To create a new column in the dataframe with the classification of 'Public Housing' or 'Private Housing',we can use the `mutate()` function from the dplyr package.
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r}
+private_types <- c("Condominium", "Terrace House", "Executive Condominium",
+                   "Semi-Detached House", "Detached House")
+public_types <- c("Apartment") # Modify this based on your specific context
+
+# Define the function to classify the housing type
+classify_housing <- function(type) {
+  if (type %in% private_types) {
+    return('Private Housing')
+  } else if (type %in% public_types) {
+    return('Public Housing')
+  } else {
+    return('Other') # In case there are types that do not fit in the above categories
+  }
+}
+
+# Use mutate to apply the classification to a new column
+RT_new <- RT_new %>%
+  mutate(Housing_Category = sapply(`Property Type`, classify_housing))
+
+# Check the first few rows of your dataframe to confirm
+head(RT_new)
+```
+
+</details>
+
+Now that we've completed these preparatory steps, let's review the updated data table by `glimpse()` function.
+
+```{r}
+glimpse(RT_new)
+
+```
+
+## 2.4 Summary statistics of data table
+
+Moving forward, we will compute summary statistics. These will provide us with valuable insights, such as the average, median, minimum, and maximum transacted prices, which are pivotal for understanding the market's behavior.
+
+::: panel-tabset
+## Summary
+
+```{r}
+#| echo: false
+library(tidyr)
+library(knitr)
+summary_table <- RT_new %>%
+  group_by(Quarter, `Property Type`) %>%
+  summarise(
+    Total_Transactions = n(),
+    Average_Price = mean(`Transacted Price ($)`, na.rm = TRUE),
+    Median_Price = median(`Transacted Price ($)`, na.rm = TRUE),
+    Min_Price = min(`Transacted Price ($)`, na.rm = TRUE),
+    Max_Price = max(`Transacted Price ($)`, na.rm = TRUE),
+    .groups = 'drop' # This will remove the grouping
+  )
+
+# Using knitr::kable() to print the full table
+kable(summary_table)
+
+```
+
+## Code
+
+```{summary_table <- RT_new %>%}
+  group_by(Quarter, `Property Type`) %>%
+  summarise(
+    Total_Transactions = n(),
+    Average_Price = mean(`Transacted Price ($)`, na.rm = TRUE),
+    Median_Price = median(`Transacted Price ($)`, na.rm = TRUE),
+    Min_Price = min(`Transacted Price ($)`, na.rm = TRUE),
+    Max_Price = max(`Transacted Price ($)`, na.rm = TRUE),
+    .groups = 'drop' # This will remove the grouping
+  )
+
+# Using knitr::kable() to print the full table
+kable(summary_table)
+```
+:::
+
+# **3. Exploratory Data Analysis**
+
+## 3.1 The relationship between *Transacted price* and *Property type*
+
+A pivotal aspect of our exploratory data analysis is understanding the relationship between the transacted price and the type of property. Different types of properties, such as condominiums, terraced houses, or apartments, may exhibit unique price distributions due to various factors like location, size, and amenities. These distinctions can provide us with valuable insights into market segmentation and consumer preferences.
+
+To visualize this relationship, we will construct a boxplot, which is anexcellent tool for depicting the distribution of transacted prices across different property types. This graphical representation will highlight the median, quartiles, and potential outliers within each property category.
+
+```{r echo=FALSE}
+
+ggplot(RT_new, aes(x = `Property Type`, y = `Transacted Price ($)`, fill = `Property Type`)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Pastel1") +  
+  scale_y_log10(labels = scales::dollar_format()) +
+  labs(
+    x = "Property Type",
+    y = "Transacted Price ($)",
+    title = "Boxplot of Transacted Price by Property Type"
+  ) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+ggplot(RT_new, aes(x = `Property Type`, y = `Transacted Price ($)`, fill = `Property Type`)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Pastel1") +  
+  scale_y_log10(labels = scales::dollar_format()) +
+  labs(
+    x = "Property Type",
+    y = "Transacted Price ($)",
+    title = "Boxplot of Transacted Price by Property Type"
+  ) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+</details>
+
+::: {#Obervation .callout-tip appearance="simple"}
+Observation:
+
+1.  Executive Condominiums and Condominiums display higher median prices compared to Apartments and Terrace Houses.
+
+2.  Detached Houses exhibit the widest range of transacted prices, indicating high variability in this property type.
+
+3.  There are numerous outliers for Condominiums, suggesting that there are some highly priced units within this category.
+
+4.  Apartments appear to be the most affordable property type, with lower median and fewer high-value outliers.
+
+5.  Semi-Detached and Detached Houses show higher price ranges, suggesting these are generally more premium property types
+:::
+
+```{r echo=FALSE}
+library(ggplot2)
+library(ggridges)  
+library(scales)   
+library(viridis)   
+
+ggplot(RT_new, aes(x = `Transacted Price ($)`, y = `Property Type`, fill = ..ecdf..)) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient",
+    calc_ecdf = TRUE,
+    scale = 3, 
+    rel_min_height = 0.01 
+  ) +
+  scale_fill_viridis_c(
+    name = "Tail probability",
+    option = "C", 
+    direction = -1  
+  ) +
+  scale_x_log10(labels = dollar_format()) +  # Use logarithmic scale for x-axis
+  labs(
+    x = "Transacted Price ($)",
+    y = "Property Type",
+    title = "Density Ridge Gradient Plot of Transacted Price by Property Type"
+  ) +
+  theme_light() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+ggplot(RT_new, aes(x = `Transacted Price ($)`, y = `Property Type`, fill = ..ecdf..)) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient",
+    calc_ecdf = TRUE,
+    scale = 3, 
+    rel_min_height = 0.01 
+  ) +
+  scale_fill_viridis_c(
+    name = "Tail probability",
+    option = "C", 
+    direction = -1  
+  ) +
+  scale_x_log10(labels = dollar_format()) +  # Use logarithmic scale for x-axis
+  labs(
+    x = "Transacted Price ($)",
+    y = "Property Type",
+    title = "Density Ridge Gradient Plot of Transacted Price by Property Type"
+  ) +
+  theme_light() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+</details>
+
+The plot illustrates the distribution of property prices across property types, with color intensity reflecting the probability density of price points.
+
+::: {.callout-tip appearance="simple"}
+Observation:
+
+1.  Apartments show the lowest price range, predominantly under \$1,000,000, suggesting they are the most affordable property type within this market.
+
+2.  Condominiums display a broader distribution with a significant concentration around \$1,000,000 to \$2,000,000, indicating a middle-tier price range.
+
+3.  Detached Houses have the widest distribution, extending well beyond \$10,000,000, highlighting them as the most varied and potentially expensive property type.
+
+4.  Executive Condominiums appear to have a compact distribution centered just around \$1,000,000, pointing to a less diverse price range.
+
+5.  High-value Outliers are most prominent within Detached and Semi-Detached Houses, as seen in the long tails stretching to the right.
+:::
+
+## 3.2 Distribution of *Sales Units* across *Regions* and *Areas*
+
+Understanding the spatial distribution of property sales is pivotal for recognizing market trends and potential areas of growth or decline. The bar plots constructed to visualize these distributions offer a clear visual representation of where the real estate market is most vibrant and where it is more subdued.
+
+```{r echo=FALSE}
+
+plot1 <- ggplot(RT_new, aes(x = `Planning Region`, y = `Number of Units`)) +
+  geom_bar(stat = "identity", fill = "steelblue") +  # Change the color here
+  labs(x = "Planning Region", y = "Number of Units", title = "Distribution of Units by Planning Region") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), 
+        plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
+
+plot2 <- ggplot(RT_new, aes(x = `Planning Area`, y = `Number of Units`)) +
+  geom_bar(stat = "identity", fill = "lightblue") +  # And here
+  labs(x = "Planning Area", y = "Number of Units", title = "Distribution of Units by Planning Area") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        plot.title = element_text(hjust = 0.5))
+
+# Combine the plots
+combined_plot <- plot1 / plot2 
+
+# Print the combined plot
+combined_plot
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+plot1 <- ggplot(RT_new, aes(x = `Planning Region`, y = `Number of Units`)) +
+  geom_bar(stat = "identity", fill = "steelblue") +  # Change the color here
+  labs(x = "Planning Region", y = "Number of Units", title = "Distribution of Units by Planning Region") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), 
+        plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
+
+plot2 <- ggplot(RT_new, aes(x = `Planning Area`, y = `Number of Units`)) +
+  geom_bar(stat = "identity", fill = "lightblue") +  # And here
+  labs(x = "Planning Area", y = "Number of Units", title = "Distribution of Units by Planning Area") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        plot.title = element_text(hjust = 0.5))
+
+# Combine the plots
+combined_plot <- plot1 / plot2 
+
+# Print the combined plot
+combined_plot
+```
+
+</details>
+
+```{r echo=FALSE}
+
+# Sum the 'Number of Units' for each 'Planning Area' within each 'Planning Region'
+RT_new_aggregated <- RT_new %>%
+  group_by(`Planning Region`, `Planning Area`) %>%
+  summarise(TotalUnits = sum(`Number of Units`), .groups = 'drop') 
+
+combined_plot <- ggplot(RT_new_aggregated, aes(x = `Planning Area`, y = TotalUnits)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  facet_wrap(~`Planning Region`, scales = "free_x") +
+  labs(
+    x = "Planning Area",
+    y = "Total Number of Units",
+    title = "Distribution of Total Units by Planning Area within each Planning Region"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    legend.position = "none"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)))
+combined_plot
+
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+# Sum the 'Number of Units' for each 'Planning Area' within each 'Planning Region'
+RT_new_aggregated <- RT_new %>%
+  group_by(`Planning Region`, `Planning Area`) %>%
+  summarise(TotalUnits = sum(`Number of Units`), .groups = 'drop') 
+
+combined_plot <- ggplot(RT_new_aggregated, aes(x = `Planning Area`, y = TotalUnits)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  facet_wrap(~`Planning Region`, scales = "free_x") +
+  labs(
+    x = "Planning Area",
+    y = "Total Number of Units",
+    title = "Distribution of Total Units by Planning Area within each Planning Region"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    legend.position = "none"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)))
+combined_plot
+
+```
+
+</details>
+
+::: {.callout-tip appearance="simple"}
+Observation:
+
+The top plot reveals that the Central Region has the highest number of sales units compared to other regions, suggesting a denser or more active real estate market in this area. The other regions show significantly fewer units, with the North East Region and West Region being the next most active. Both these regions show a more even distribution, with most planning areas having a moderate number of units, generally in the range of about 500 to 1000 units. This might indicate a more balanced development approach or uniform population density.
+
+The North Region and West Region seem to have less developed character based on the generally lower number of units.
+:::
+
+## 3.3 The Private Housing price trend from 2023-2024Q1
+
+This density plot depicts the distribution of transacted real estate prices across different quarters, from Q1 2023 to Q1 2024.
+
+```{r echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(scales) # for dollar_format()
+
+ggplot(RT_new, aes(x = `Transacted Price ($)`)) +
+  geom_density(aes(color = Quarter), adjust = 0.5, alpha = 0.5) + # I've removed fill=NA for better visibility
+  scale_x_log10(limits = c(100000, 10000000), labels = scales::dollar_format()) + # Log transform and set limits
+  labs(title = "Density Plot of Transacted Prices by Quarter",
+       x = "Transacted Price ($)",
+       y = "Density") +
+  theme_minimal() +
+  theme(text = element_text(size = 12),  # Increase base text size
+        axis.title = element_text(size = 14, face = "bold"),  # Bold axis titles
+        axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text for readability
+        axis.text.y = element_text(size = 12),  # Increase y-axis text size
+        legend.title = element_text(size = 12),  # Increase legend title size
+        legend.text = element_text(size = 10))  # Increase legend text size
+
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+library(dplyr)
+library(ggplot2)
+library(scales) # for dollar_format()
+
+ggplot(RT_new, aes(x = `Transacted Price ($)`)) +
+  geom_density(aes(color = Quarter), adjust = 0.5, alpha = 0.5) + 
+  scale_x_log10(limits = c(100000, 10000000), labels = scales::dollar_format()) + # Log transform and set limits
+  labs(title = "Density Plot of Transacted Prices by Quarter",
+       x = "Transacted Price ($)",
+       y = "Density") +
+  theme_minimal() +
+  theme(text = element_text(size = 12),  # Increase base text size
+        axis.title = element_text(size = 14, face = "bold"),  # Bold axis titles
+        axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text for readability
+        axis.text.y = element_text(size = 12), 
+        legend.title = element_text(size = 12),  
+        legend.text = element_text(size = 10)) 
+
+
+```
+
+</details>
+
+::: {.callout-tip appearance="simple"}
+Observation:
+
+1.  The curves are quite similar in shape and position, indicating that the general distribution of prices has remained relatively stable from quarter to quarter during this timeframe.
+
+2.  There’s a tailing off as the prices increase, which is typical of real estate markets where there are fewer high-priced transactions.
+
+3.  The small bumps and increases in density at the higher end of the price scale, particularly noticeable in the curves for Q2 and Q4 2023, might indicate periods or areas with higher-than-average property transactions.
+:::
+
+The scatter plot shows transaction prices for private housing, which appear to be spread across a wide range. Based on these observations, the key takeaways could be the identification of property types with the highest prices, the recognition of the most common price range, and the overall trend in housing prices over the year.
+
+```{r echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+
+# Filter the original dataset for private housing
+private_housing_data <- RT_new %>%
+  filter(Housing_Category == "Private Housing")
+
+# Aggregate to find the average transacted price for each property type and sale date
+transacted_price_trend <- private_housing_data %>%
+  group_by(`Property Type`, `Sale Date`) %>%
+  summarize(Average_Price = mean(`Transacted Price ($)`), .groups = 'drop')
+
+# Find the maximum average price for each property type
+max_prices <- transacted_price_trend %>%
+  group_by(`Property Type`) %>%
+  summarize(Max_Average_Price = max(Average_Price), .groups = 'drop')
+
+# Join the maximum prices back to the transacted price trend
+annotated_data <- transacted_price_trend %>%
+  left_join(max_prices, by = "Property Type") %>%
+  # Only keep the rows where the average price matches the max average price
+  filter(Average_Price == Max_Average_Price) 
+
+ggplot(transacted_price_trend, aes(x = `Sale Date`, y = Average_Price)) +
+  geom_point(aes(color = `Property Type`)) +  # Color points by Property Type
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_label_repel(
+    data = annotated_data,
+    aes(label = `Property Type`),
+    size = 4,
+    nudge_y = 0.1,
+    nudge_x = 0.1,
+    fontface = "bold",
+    box.padding = unit(0.35, "lines"),
+    point.padding = unit(0.5, "lines")
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Private Housing Transacted Price Distribution",
+    x = "Sale Date",
+    y = "Average Transacted Price ($)"
+  ) +
+  scale_y_log10(labels = dollar_format()) +
+  scale_color_brewer(palette = "Set1") # Adds a color palette for different property types
+
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+
+private_housing_data <- RT_new %>%
+  filter(Housing_Category == "Private Housing")
+
+transacted_price_trend <- private_housing_data %>%
+  group_by(`Property Type`, `Sale Date`) %>%
+  summarize(Average_Price = mean(`Transacted Price ($)`), .groups = 'drop')
+
+max_prices <- transacted_price_trend %>%
+  group_by(`Property Type`) %>%
+  summarize(Max_Average_Price = max(Average_Price), .groups = 'drop')
+
+annotated_data <- transacted_price_trend %>%
+  left_join(max_prices, by = "Property Type") %>%
+  # Only keep the rows where the average price matches the max average price
+  filter(Average_Price == Max_Average_Price) 
+
+ggplot(transacted_price_trend, aes(x = `Sale Date`, y = Average_Price)) +
+  geom_point(aes(color = `Property Type`)) +  # Color points by Property Type
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_label_repel(
+    data = annotated_data,
+    aes(label = `Property Type`),
+    size = 4,
+    nudge_y = 0.1,
+    nudge_x = 0.1,
+    fontface = "bold",
+    box.padding = unit(0.35, "lines"),
+    point.padding = unit(0.5, "lines")
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Private Housing Transacted Price Distribution",
+    x = "Sale Date",
+    y = "Average Transacted Price ($)"
+  ) +
+  scale_y_log10(labels = dollar_format()) +
+  scale_color_brewer(palette = "Set1") # Adds a color palette for different property types
+```
+
+</details>
+
+```{r echo=FALSE}
+ggplot(transacted_price_trend, aes(x = `Sale Date`, y = Average_Price)) +
+  geom_point(aes(color = `Property Type`)) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~`Property Type`, scales = "free_y") +  # Facet by Property Type
+  theme_minimal() +
+  labs(
+    title = "Private Housing Transacted Price Trend by Property Type",
+    x = "Sale Date",
+    y = "Average Transacted Price ($)"
+  ) +
+  scale_y_log10(labels = dollar_format()) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "none") # Remove the legend to save space
+
+```
+
+<details>
+
+<summary>Click to show code</summary>
+
+```{r eval=FALSE}
+ggplot(transacted_price_trend, aes(x = `Sale Date`, y = Average_Price)) +
+  geom_point(aes(color = `Property Type`)) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~`Property Type`, scales = "free_y") +  # Facet by Property Type
+  theme_minimal() +
+  labs(
+    title = "Private Housing Transacted Price Trend by Property Type",
+    x = "Sale Date",
+    y = "Average Transacted Price ($)"
+  ) +
+  scale_y_log10(labels = dollar_format()) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "none") # Remove the legend to save space
+```
+
+</details>
+
+::: {.callout-tip appearance="simple"}
+Observation:
+
+**Condominiums** : Prices are concentrated within a narrower band, showing less variation over time, which suggests stability in condominium prices.
+
+**Detached Houses** : Display a broader range of prices, indicating a more diverse market that includes both moderately priced and high-end luxury homes.
+
+**Executive Condominiums** : Have a clustering of prices at the lower end, with an upward trend over time, which may indicate increasing demand or value appreciation for this type of property.
+
+**Semi-Detached Houses** : Similar to detached houses, they show a wide range of transaction prices, reflecting a varied market.
+
+**Terrace Houses** : Prices seem to have a smaller variation and are centered around a price point, suggesting a more uniform market for this type of property.
+:::
+
+## Conclusion
+
+-   Public housing caters to the majority with affordable options. Private housing, on the other hand, serves those with higher income brackets, offering a diverse range of property types and price points.The exploratory data analysis highlights the stark segmentation within the private housing market. We observe that detached houses, catering to the upper end of the market, not only command higher prices but also demonstrate greater price variabilitys.
+
+-   The distribution of units by planning region and area reveals disparities in housing density that reflect both the current state of urban development and potential areas for growth. High numbers of units in certain regions may indicate areas with high housing demand or development. Conversely, areas with fewer units could represent less developed or more exclusive regions.
+
+-   Over the depicted time period from 2023Q1 to 2024Q1, there does not appear to be a clear upward or downward trend in prices for any property type, suggesting relative market stability during this time.
+
+-   In summary, the private housing market in Singapore offers a variety of options for families with different income levels, with distinct patterns in terms of price distribution and unit density across regions.
