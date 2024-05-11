@@ -1,0 +1,32 @@
+---
+title: "In-class_Ex05"
+---
+
+```{r}
+pacman::p_load(tidyverse,readtext,
+               quanteda,tidytext)
+```
+
+```{r}
+text_data <- readtext(paste0("data/articles","/*"))
+```
+
+```
+txt_data_splitted <- text_data %>%
+  separate_wider_delim("doc_id",
+                       delim = "_0_",
+                       names = c("X", "Y"),
+                       too_few = "align_end")
+```
+
+```{r}
+pacman::p_load(jsonlite,tidyverse)
+```
+
+```{r}
+mc1_data <- fromJSON("data/MC1/mc1.json")
+```
+
+```{r}
+mc2_data <- fromJSON("data/MC1/mc2.json")
+```
