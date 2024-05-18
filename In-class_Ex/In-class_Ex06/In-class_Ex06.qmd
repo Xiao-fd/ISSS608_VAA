@@ -1,0 +1,200 @@
+---
+title: "In-class_Ex06"
+---
+
+Loading package
+
+```{r}
+library(stringi)
+library(stringr)
+library(tidyr)
+library(tibble)
+library(rvest)
+library(corporaexplorer)
+library(readr)
+```
+
+```{r}
+pacman:: p_load(tidyverse,readtext,
+                corporaexplorer
+                )
+```
+
+read data
+
+```{r}
+bible <- readr::read_lines("http://www.gutenberg.org/cache/epub/10/pg10.txt")
+```
+
+```{r}
+# Collapsing into one string.
+bible <- paste(bible, collapse = "\n")
+```
+
+```{r}
+start_v <- stri_locate_first_fixed(bible, "The First Book of Moses: Called Genesis")[1]
+end_v <- stri_locate_last_fixed(bible, "Amen.")[2]
+bible <- stri_sub(bible, start_v, end_v)
+```
+
+```{r}
+books <- stri_split_regex(bible, "\n{5}") %>%
+    unlist %>%
+    .[-40] 
+```
+
+```{r}
+books <- str_replace_all(books, "\n{2,}", "NEW_PARAGRAPH") %>%
+    str_replace_all("\n", " ") %>%
+    str_replace_all("NEW_PARAGRAPH", "\n\n")
+books <- books[3:68] 
+```
+
+```{r}
+chapters <- str_replace_all(books, "(\\d+:1 )", "NEW_CHAPTER\\1") %>%
+    stri_split_regex("NEW_CHAPTER")
+```
+
+```{r}
+chapters <- lapply(chapters, function(x) x[-1])
+```
+
+```{r}
+book_titles <- read_html("https://www.esv.org/resources/esv-global-study-bible/list-of-abbreviations") %>%
+  html_nodes("td:nth-child(1)") %>%
+  html_text() %>%
+  .[13:78]
+```
+
+```{r}
+testament <- c(rep("Old", 39), rep("New", 27))
+```
+
+```{r}
+bible_df <- tibble::tibble(Text = chapters,
+                           Book = book_titles,
+                           Testament = testament)
+```
+
+```{r}
+# We want each chapter to be one row, but keep the metadata (book and which testament).
+bible_df <- tidyr::unnest(bible_df, Text)
+```
+
+```{r}
+# As this is a corpus which is not organised by date,
+  # we set `date_based_corpus` to `FALSE`.
+# Because we want to organise our exploration around the books in the Bible,
+  # we pass `"Book"` to the `grouping_variable` argument.
+# We specify which metadata columns we want to be displayed in the
+  # "Document information" tab, using the `columns_doc_info` argument.
+KJB <- prepare_data(dataset = bible_df,
+                    date_based_corpus = FALSE,
+                    grouping_variable = "Book",
+                    columns_doc_info = c("Testament", "Book"))
+```
+
+```{r}
+class(KJB)
+```
+
+```{r}
+explore(KJB)
+```
+
+(this function allow to search the words in the articles )
+
+```{r}
+pacman::p_load(jsonlite, tidygraph,ggraph, 
+               visNetwork, graphlayouts,
+               tidyverse,tidytext,
+               skimr)
+```
+
+**Data import**
+
+```{r}
+mc3_data <- fromJSON("data/MC3.json")
+```
+
+```{r}
+class(mc3_data)
+```
+
+abstract into two dataframe to rebuild the data
+
+reconstruct the model
+
+**extracting the edges**
+
+```{r}
+mc3_edges <- as_tibble(mc3_data$links) %>%
+  distinct() %>%
+  mutate(source =
+as.character(source),
+          target = 
+as.character(target),
+           type = as.character(type)) %>%
+  group_by(source, target, type) %>%
+  summarise(weight = n()) %>%
+  filter(source!= target) %>%
+  ungroup()
+
+```
+
+```{r}
+mc3_nodes <- as_tibble(mc3_data$nodes) %>%
+  mutate(country = as.character(country),
+         id = as.character(id),
+         product_services =
+as.character(product_services), 
+         revenue_omu = 
+as.numeric(as.character(revenue_omu)),
+        type = as.character(type)) %>%
+        select(id,country,type, revenue_omu,
+         product_services)
+           
+
+
+```
+
+```{r}
+id1<- mc3_edges %>%
+  select(source) %>%
+  rename(id =source)
+id2 <- mc3_edges %>%
+  select(target) %>%
+  rename(id = target)
+mc3_node1 <- rbind(id1,id2) %>%
+  distinct() %>%
+  left_join(mc3_nodes,
+            unmatched ="drop")
+  
+
+
+```
+
+```{r}
+mc3_graph <- tbl_graph(nodes = mc3_node1,
+                       edges = mc3_edges,
+                       directed = FALSE) %>%
+mutate(betweenness_centrality = 
+centrality_betweenness(),
+       closeness_centrality =
+   centrality_closeness())
+  
+```
+
+```{r}
+mc3_graph %>%
+  filter(betweenness_centrality >= 100000) %>%
+ggraph(layout = "fr") +
+  geom_edge_link(aes(alpha=0.5)) +
+  geom_node_point(aes(
+    size = betweenness_centrality,
+    colors ="'lightblue",
+    alpha = 0.5)) +
+  scale_size_continuous(range =c(1,10)) + 
+  theme_graph()
+
+```
