@@ -104,6 +104,8 @@ explore(KJB)
 
 (this function allow to search the words in the articles )
 
+**In-class exercise**
+
 ```{r}
 pacman::p_load(jsonlite, tidygraph,ggraph, 
                visNetwork, graphlayouts,
