@@ -11,7 +11,7 @@ pacman::p_load(tidyverse,readtext,
 text_data <- readtext(paste0("data/articles","/*"))
 ```
 
-```
+```         
 txt_data_splitted <- text_data %>%
   separate_wider_delim("doc_id",
                        delim = "_0_",
