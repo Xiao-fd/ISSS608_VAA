@@ -1,0 +1,98 @@
+---
+title: "Take-Home Exercise 03"
+---
+
+## **Our Task**
+
+## **The Data**
+
+# **1. Getting Started**
+
+## **1.1 Loading R packages**
+
+We load the following R packages using the `pacman::p_load()` function:
+
+```{r}
+
+pacman::p_load(tidyverse, ggrepel, patchwork, 
+               ggthemes, hrbrthemes,
+              ggridges, colorspace) 
+
+```
+
+## **1.2 Importing data**
+
+The code chunk below imports the dataset into R environment by using [*`read_csv()`*](https://readr.tidyverse.org/reference/read_delim.html) function of [`readr`](https://readr.tidyverse.org/) package. **readr** is one of the tidyverse package.
+
+Read the individual CSV files into data frames. Check that the structure of each data frame is the same.
+
+```{r}
+Titleinfo <- read_csv("data/Data_TitleInfo.csv")
+```
+
+```{r}
+Studentinfo <- read_csv("data/Data_StudentInfo.csv")
+```
+
+```{r}
+class1<- read_csv("data/Data_Submitrecord/SubmitRecord-Class1.csv")
+```
+
+```{r}
+class2<- read_csv("data/Data_Submitrecord/SubmitRecord-Class2.csv")
+```
+
+```{r}
+class3 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class3.csv")
+```
+
+```{r}
+class4 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class4.csv")
+```
+
+```{r}
+class5 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class5.csv")
+```
+
+```{r}
+class6 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class6.csv")
+```
+
+```{r}
+class7 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class7.csv")
+```
+
+```{r}
+class8 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class8.csv")
+```
+
+```{r}
+class9 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class9.csv")
+```
+
+```{r}
+class10<- read_csv("data/Data_Submitrecord/SubmitRecord-Class10.csv")
+```
+
+```{r}
+class11 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class11.csv")
+```
+
+```{r}
+class12 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class12.csv")
+```
+
+```{r}
+class13 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class13.csv")
+```
+
+```{r}
+class14 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class14.csv")
+```
+
+```{r}
+class15 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class15.csv")
+```
+
+
+## **Check missing values**
