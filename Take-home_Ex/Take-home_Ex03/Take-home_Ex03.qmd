@@ -1,98 +1,567 @@
 ---
-title: "Take-Home Exercise 03"
+title: "Take-home Exercise 3"
+author: "Xiao Fudi"
+date: "June 09, 2024"
+
+
+execute:
+  warning: false
+  code-flow : true
+  output: html_document
 ---
 
-## **Our Task**
+# 1. **Overview**
 
-## **The Data**
+NorthClass, a prominent higher education institution with over 300,000 registered learners, offers more than 100 courses across various disciplines. To enhance its digital age competitiveness, NorthClass launched a programming course requiring learners to complete tasks with multiple submissions. Post-course, the institution collects learning data to assess instructional quality. NorthClass plans to form a Smart Education Development and Innovation Group to leverage AI for improving education and nurturing innovative talents. Visualization and Visual Analytics are proposed to transform complex learning data into intuitive graphical representations, aiding in diagnosing knowledge mastery, monitoring learning trends, and identifying factors causing learning difficulties. The task is to design and implement a Visual Analytics solution to help NorthClass perceive learners' progress and provide recommendations for teaching strategy adjustments and course design improvements.
 
-# **1. Getting Started**
+# 2. **Our Task**
 
-## **1.1 Loading R packages**
+From the Challenge, the key problem statement was to perform a comprehensive analysis of multiple datasets that describe various aspects of the learner’s profile, learning patterns and status, to derive key insights to enhance teaching strategies and course design.
+
+Consequently the key requirements based on the 5 stipulated tasks in the challenge were as follows.
+
+-   Task 1: To provide a quantitative assessment of the learners’ knowledge mastery and identify weak links in their knowledge system, based on the multi-dimensional attributes such as answer scores and answer status in the learners’ log records of the learners’ question-answering behaviors.
+
+    This would entail an analysis of the learners’ aggregate performance in their programming tasks (a.k.a. questions in the dataset), including measures of central tendency, or any notable patterns that can glean insights towards knowledge mastery and weaknesses from the given datasets.
+
+# 3. **The Datasets**
+
+The provided materials for the challenge include 3 datasets described below, as well as a separate document providing a more detailed description of the data and variables
+
+Dataset 1: Student Information - This comprises of 5 Cols, 1364 Rows, providing individualised demographic variables of the learners (a.k.a students) within the scope this project
+
+Dataset 2: Learning Subject Title Information - This comprises of 5 Cols, 44 Rows, providing variables of the questions from the programming tasks which are collated in the scope of this project
+
+Dataset 3: Class Submission Records - This comprises of multiple datasets, each with 10 Cols and various number of rows, providing supposedly the participating learners’ answering variables to the questions collated in the scope of this project
+
+# **4. Methodology**
+
+Our methodology systematically integrates data collection, data processing, analysis, pattern mining, modeling, and recommendations to create a comprehensive Visual Analytics solution for improving teaching strategies and course designs at NorthClass Institute, showing as below:
+
+![](images/IMG_5447.jpg){width="633"}
+
+# **5. Getting Started**
+
+## **5.1 Loading R packages**
 
 We load the following R packages using the `pacman::p_load()` function:
 
 ```{r}
-
-pacman::p_load(tidyverse, ggrepel, patchwork, 
-               ggthemes, hrbrthemes,
-              ggridges, colorspace) 
+pacman::p_load(geojsonR,rjson,sf, dplyr,tidyr,stringr,readr,fs,purrr,ggplot2, plotly, ggstatsplot,igraph,lubridate,hms, vcd, ggalluvial, ggforce)
 
 ```
 
-## **1.2 Importing data**
+## **5.2 Importing data**
 
 The code chunk below imports the dataset into R environment by using [*`read_csv()`*](https://readr.tidyverse.org/reference/read_delim.html) function of [`readr`](https://readr.tidyverse.org/) package. **readr** is one of the tidyverse package.
 
 Read the individual CSV files into data frames. Check that the structure of each data frame is the same.
 
 ```{r}
-Titleinfo <- read_csv("data/Data_TitleInfo.csv")
+df_TitleInfo <- read_csv("data/Data_TitleInfo.csv")
 ```
 
 ```{r}
-Studentinfo <- read_csv("data/Data_StudentInfo.csv")
+df_StudentInfo <- read_csv("data/Data_StudentInfo.csv")
 ```
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class1<- read_csv("data/Data_Submitrecord/SubmitRecord-Class1.csv")
+csv_file_list <- dir('data/Data_SubmitRecord')
+csv_file_list <- paste0("./data/Data_SubmitRecord/",csv_file_list)
+
+
+df_StudentRecord <- NULL
+for (file in csv_file_list) { # for every file...
+  file <- read_csv(file)
+    df_StudentRecord <- rbind(df_StudentRecord, file) # then stick together by rows
+}
+df_StudentRecord %>% glimpse()
 ```
+
+</details>
+
+## 5.3 Data Preparation
+
+### 5.3.1 Data Cleaning
+
+First, we identify students who are enrolled in more than one class. This helps us focus on those who need their class assignments reviewed. For students enrolled in multiple classes, we determine the correct class by identifying which class they attended most frequently. Finally, we update the class assignments in the original dataset. We replace the incorrect class values with the correct class determined in the previous step. This ensures that each student is associated with the class they attended most often.
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class2<- read_csv("data/Data_Submitrecord/SubmitRecord-Class2.csv")
+# Step 1: Identify students with multiple classes
+students_multiple_classes <- df_StudentRecord %>%
+  group_by(student_ID) %>%
+  summarise(unique_classes = n_distinct(class)) %>%
+  filter(unique_classes > 1)
+
+# Step 2: Identify the correct class for each student (the class with the highest frequency)
+correct_classes <- df_StudentRecord %>%
+  filter(student_ID %in% students_multiple_classes$student_ID) %>%
+  group_by(student_ID, class) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  slice(1) %>%
+  select(student_ID, correct_class = class)
+
+# Step 3: Replace wrong class values
+df_StudentRecord <- df_StudentRecord %>%
+  left_join(correct_classes, by = "student_ID") %>%
+  mutate(class = ifelse(!is.na(correct_class), correct_class, class)) %>%
+  select(-correct_class)
+
 ```
+
+</details>
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class3 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class3.csv")
+#remove index column
+df_StudentRecord <- df_StudentRecord %>% select(-1)
+df_TitleInfo <- df_TitleInfo %>% select(-1)
+df_StudentInfo <- df_StudentInfo %>% select(-1)
+
 ```
+
+</details>
 
 ```{r}
-class4 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class4.csv")
+summary(df_StudentRecord)
+summary (df_TitleInfo)
+summary (df_StudentInfo)
 ```
+
+### 5.3.2 Convert Data Type
+
+The `time_change` column in the `df_StudentRecord` dataset is converted from a timestamp to a `POSIXct` date-time format. This transformation allows for easier manipulation and analysis of time data in subsequent steps.
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class5 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class5.csv")
+# Convert time from timestamp to POSIXct
+df_StudentRecord$time_change <- as.POSIXct(df_StudentRecord$time, origin="1970-01-01", tz="UTC")
+
+df_StudentRecord <- df_StudentRecord %>%
+  mutate(
+    time_change = ymd_hms(time_change),
+    date = as.Date(time_change),
+    time = as_hms(format(time_change, "%H:%M:%S")),
+    score = as.factor(score),
+    timeconsume = as.numeric(timeconsume)
+  ) 
+
+df_TitleInfo <- df_TitleInfo %>%
+  mutate (
+    score = as.factor(score)
+  )
 ```
+
+</details>
+
+### **5.3.3 Data**
+
+To validate the completeness of student records, we identify any students present in the `df_StudentRecord` dataset but missing in the `df_StudentInfo` dataset. This is done using the `anti_join` function, which performs a left join and returns only those records from `df_StudentRecord` that do not have a corresponding match in `df_StudentInfo`.
+
+To clean the dataset, we apply filters to remove records with erroneous or invalid data:
+
+-   **Remove Invalid States:** We filter out records with a specific invalid state (`'�������'`). This step ensures that only valid state values are retained in the dataset.
+
+-   **Remove Invalid Classes:** We filter out records with the class labeled as `"class"`, which is likely a placeholder or erroneous entry. This ensures that only legitimate class values are retained.
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class6 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class6.csv")
+missing_students <- anti_join(df_StudentRecord, df_StudentInfo, by = "student_ID")
+
+# Display the missing student IDs
+missing_student_ids <- missing_students %>% select(student_ID) %>% distinct()
+print(missing_student_ids)
+
+
+unique(df_StudentRecord$state)
+
+df_StudentRecord <- df_StudentRecord %>%
+  filter (state != '�������')%>%
+  filter (class != "class")
 ```
+
+</details>
+
+### 5.3.4 Data Integration
+
+To combine multiple datasets into a single cohesive dataset and appropriately rename columns for clarity.
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class7 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class7.csv")
+
+# Merge TitleInfo with the already merged data based on title_ID
+merged_data <- merge(df_StudentRecord, df_TitleInfo, by = "title_ID")
+
+merged_data <- merged_data %>%
+  rename(
+    actual_score = score.x,
+    question_score = score.y
+  )
 ```
+
+</details>
 
 ```{r}
-class8 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class8.csv")
+#| echo: false
+summary (merged_data)
 ```
+
+### 5.3.5 Data Filtering
+
+The aim is to filter the dataset to retain only the earliest record for each unique combination of `title_ID` and `student_ID` based on the `time_change` variable. If a student has multiple submissions for the same title, only the first submission (based on `time_change`) is kept in the dataset.This ensures that each student-title pairing is represented by the first occurrence in the dataset, eliminating any duplicate entries.
+
+<details>
+
+<summary>Click to show code</summary>
 
 ```{r}
-class9 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class9.csv")
+library(dplyr)
+
+# Arrange the dataset by title_ID, student_ID, and time_change
+unique_merged_data <- merged_data %>%
+  arrange(title_ID, student_ID, time_change) %>%
+  distinct(title_ID, student_ID, .keep_all = TRUE)
+
+# Display the filtered dataset
+print(unique_merged_data)
+
 ```
+
+</details>
 
 ```{r}
-class10<- read_csv("data/Data_Submitrecord/SubmitRecord-Class10.csv")
+summary(unique_merged_data)
 ```
+
+# 6.Visualization on Learners Question-Answering Behavior
+
+To provide a quantitative assessment of the learners’ knowledge mastery and identify weak links in their knowledge system.
+
+## 6.1 Overview on Learner Learing Log
+
+::: {#overview .panel-tabset}
+### 6.1.1.Distribution of Knowledge
 
 ```{r}
-class11 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class11.csv")
+#| echo: false
+
+# Function to create bar plots grouped by student_ID
+create_bar_plot_by_student <- function(data, variable, title) {
+  # Dynamically specify the variable for grouping
+  data_summary <- data %>%
+    group_by(student_ID, !!sym(variable)) %>%
+    summarise(count = n(), .groups = 'drop')
+  
+  # Using aes() with !!sym() for dynamic variable naming
+  p <- ggplot(data_summary, aes(x = !!sym(variable), y = count, fill = student_ID)) +
+    geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +  # Ensure clarity between student groups
+    labs(title = title, x = variable, y = "Count") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  return(p)  # Return the plot for further use
+}
+
+# Example usage to plot distribution of knowledge
+plot_knowledge <- create_bar_plot_by_student(unique_merged_data, "knowledge", "Distribution of Knowledge by Student ID")
+plot_knowledge
+ 
 ```
+
+### 6.1.2.Distribution of Score
 
 ```{r}
-class12 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class12.csv")
+#| echo: false
+
+# Function to create bar plots grouped by student_ID
+create_bar_plot_by_student <- function(data, variable, title) {
+  # Dynamically specify the variable for grouping
+  data_summary <- data %>%
+    group_by(student_ID, !!sym(variable)) %>%
+    summarise(count = n(), .groups = 'drop')
+  
+  # Using aes() with !!sym() for dynamic variable naming
+  p <- ggplot(data_summary, aes(x = !!sym(variable), y = count, fill = student_ID)) +
+    geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +  # Using dodge position for clarity
+    labs(title = title, x = variable, y = "Count") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  return(p)  # Return the plot for further use
+}
+
+# Example usage to plot distribution of score
+plot_score <- create_bar_plot_by_student(unique_merged_data, "actual_score", "Distribution of Scores by Student ID")
+plot_score
+ 
 ```
+
+### 6.1.3.Distribution of State
 
 ```{r}
-class13 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class13.csv")
+#| echo: false
+# Function to create bar plots grouped by student_ID
+create_bar_plot_by_student <- function(data, variable, title) {
+  # Dynamically specify the variable for grouping
+  data_summary <- data %>%
+    group_by(student_ID, !!sym(variable)) %>%
+    summarise(count = n(), .groups = 'drop')
+  
+  # Using aes() with !!sym() for dynamic variable naming
+  p <- ggplot(data_summary, aes(x = !!sym(variable), y = count, fill = student_ID)) +
+    geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +  # Using dodge position for clarity
+    labs(title = title, x = variable, y = "Count") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  return(p)  # Return the plot for further use
+}
+
+# Example usage to plot distribution of state
+plot_state <- create_bar_plot_by_student(unique_merged_data, "state", "Distribution of State by Student ID")
+plot_state
+
 ```
+:::
+
+-   The knowledge type `m3D1v` has the highest count of students.The knowledge category `k4W1c` has the lowest count.Other categories have varying counts between these extremes.
+
+```{=html}
+<!-- -->
+```
+-   The higher counts for `m3D1v` and `y9W5d` might indicate these knowledge areas are more commonly studied or have more questions associated with them. The low count for `k4W1c` might suggest it is a niche area or there are fewer questions/ categorized under this knowledge area.
+
+-   The high number of students scoring 0 suggests that many students may have struggled significantly or not attempted some assessments. A substantial number of students achieving a score of 3 indicates a segment of the student population performed well. The relatively lower numbers for scores 1, 2, and 4 suggest a varied performance level among the students, with fewer achieving the highest possible score of 4.
+
+### 6.1.4.Actual Score by Knowledge Type
 
 ```{r}
-class14 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class14.csv")
+#| echo: false
+library(ggplot2)
+
+# Convert 'actual_score' to numeric if it's not already
+unique_merged_data$actual_score <- as.numeric(as.character(unique_merged_data$actual_score))
+
+# Plotting histogram of actual scores
+ggplot(unique_merged_data, aes(x = actual_score)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  facet_wrap(~knowledge) +  # Faceting the plot by 'knowledge' to separate histograms for each knowledge type
+  labs(title = "Distribution of Actual Scores by Knowledge Type", x = "Actual Score", y = "Count")
+
 ```
+
+-   **'m3D1v'** shows significant counts at scores 0 and 3. This could suggest that while a large number of students fail to answer these questions, another considerable group finds these questions moderately challenging but achievable.
+
+-   **'y9W5d'** shows a peak at score 0, indicating that the majority of the students failed to answer the questions correctly, marking it as a potential area of difficulty.
+
+-   **'g7R2j' and 'k4W1c'** have a high number of instances with score 0, indicating that questions under these categories are particularly challenging for most students.
+
+### 6.1.5. Knowledge type and Questions that learner have attempted
+
+The heatmap allows for a quick visual assessment of which questions are more frequently interacted with across different categories. For instance, some questions (e.g., near the top of the heatmap) show interaction across many categories, suggesting these questions are commonly used or are of high relevance
 
 ```{r}
-class15 <- read_csv("data/Data_Submitrecord/SubmitRecord-Class15.csv")
+#| echo: false
+library(plotly)
+
+# Creating a dataframe for plotting
+data_for_plotly <- unique_merged_data %>%
+  group_by(knowledge, title_ID) %>%
+  summarise(Count = n(), .groups = 'drop')
+
+# Convert ggplot to plotly for interactive visualization
+p <- ggplot(data_for_plotly, aes(x = knowledge, y = title_ID, fill = Count)) +
+  geom_tile() +
+  scale_fill_gradient(low = "steelblue", high = "green") +
+  labs(title = "Interactive HeatMap of Questions Distribution by Knowledge", x = "Knowledge", y = "Title ID")
+
+ggplotly(p) # Convert to an interactive plotly object
 ```
 
+The heatmap allows for a quick visual assessment of which questions are more frequently interacted with across different knowledge categories. For instance, some questions (e.g., near the top of the heatmap) show interaction across many categories, suggesting these questions are commonly used or are of high relevance.
 
-## **Check missing values**
+## 6.2 Knowledge Mastery Assessment
+
+### 6.2.1 Density Plot for Time Consumed
+
+```{r}
+#| echo: false
+# Histogram with Density Plot for Time Consumed
+ggplot(unique_merged_data, aes(x = timeconsume)) +
+  geom_histogram(aes(y = ..density..), binwidth = 1, fill = "lightblue", alpha = 0.5) +
+  geom_density(color = "steelblue") +
+  labs(title = "Distribution of Time Consumed", x = "Time Consumed", y = "Density")
+
+```
+
+-   The data has a high frequency of low time consumption values. And there are few instances of extremely high time consumption.
+
+### 6.2.2 Average Time Consumed on Questions
+
+```{r}
+#| echo: false
+# Summarizing time consumption data for each title_ID
+time_consume_summary <- unique_merged_data %>%
+  group_by(title_ID) %>%
+  summarise(
+    AverageTime = mean(timeconsume, na.rm = TRUE),  # Calculate average time
+    MedianTime = median(timeconsume, na.rm = TRUE),  # Calculate median time
+    TotalTime = sum(timeconsume, na.rm = TRUE)  # Calculate total time
+  )
+
+
+# Plotting average time consumed per title_ID
+ggplot(time_consume_summary, aes(x = title_ID, y = AverageTime)) +
+  geom_bar(stat = "identity", fill = "steelblue") +  # Use bars to represent average time
+  labs(title = "Average Time Consumed by Questions", x = "Title ID", y = "Average Time (ms)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels for readability
+
+```
+
+-   There is a significant outlier with an average time consumed of approximately 80 milliseconds for the question with Title ID `Question_5fqjBSwTPG7KUJ3ItO`. Most questions have an average time consumed close to zero.
+
+### 6.2.3 The Fequency of Actual Scores Students Got
+
+```{r}
+#| echo: false
+library(reshape2)
+score_state_table <- table(unique_merged_data$state, unique_merged_data$actual_score)
+
+score_state_melted <- melt(score_state_table)
+
+# Plot heatmap
+ggplot(score_state_melted, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "red") +
+  labs(title = "Heatmap of Actual Score by State", x = "State", y = "Actual Score", fill = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("heatmap_scores_by_state.png", width = 12, height = 8, dpi = 300)
+
+```
+
+-   The heatmap shows that most states primarily have scores in the range of 0 and 1. The scores of 2, 3, and 4 are less frequent.
+
+-   Common Errors: Some error states (like Error1 and Error9) appear more frequently across different scoring ranges, as indicated by the warmer colors which denote higher counts.
+
+-    The "Absolutely_Correct" state has occurrences mainly in the score of 3, suggesting that when this state is achieved, it's usually with a high score.
+
+-    The "Partially_Correct" category is visible in lower scoring ranges, indicating that when partial correctness is achieved, the scores are generally lower.
+
+-   Error Trends: The presence of errors across different scores could indicate specific misunderstandings or common mistakes among students, which might be systematic and could warrant further investigation or targeted educational interventions.
+
+### 6.2.4 Average Scores on Questions
+
+```{r}
+#| echo: false
+library(ggplot2)
+library(dplyr)
+
+# Calculate median scores for each title_ID
+medians <- unique_merged_data %>%
+  group_by(title_ID) %>%
+  summarise(MedianScore = median(actual_score, na.rm = TRUE))  # Calculate the median, removing NAs
+
+# Create the plot with boxplots and median text labels only
+ggplot(unique_merged_data, aes(x = title_ID, y = actual_score, group = title_ID)) +
+  geom_boxplot() +  # Plot boxplots with outliers shown by default
+  geom_text(data = medians, aes(x = title_ID, y = MedianScore, label = MedianScore),
+            vjust = -0.5, color = "red", size = 3) +  # Add median values as text above the boxplots
+  labs(title = "Distribution of Acutal Scores on Questions", x = "Title ID", y = "Score") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels for readability
+
+
+
+```
+
+-   Several questions show a significant number of students achieving high scores (3 or 4). For example, `Question_t9OjrpZLW4RvQz85h6` and `Question_V_gKw8PIY1FR6cm2Ql9XW` have multiple high scores.
+
+-   Some questions have a substantial number of low scores 0, indicating they may be more challenging or misunderstood by students. Examples include `Question_5fqjBSwTPG7KUJ3ItO` and `Question_FN98X9v5zcbB1fQxrHR3`.
+
+-    The variation in scores suggests different levels of difficulty across the questions. Questions with a wide range of scores likely challenge students to different extents. Questions with many low scores 0 might need to be reviewed for clarity or fairness. These questions could be complex, poorly worded, or require concepts that students find difficult.
+
+-   Observing patterns in high and low scores can help identify which areas students excel in and which they struggle with, guiding targeted interventions.
+
+### 6.2.5 Peformance on Knowledge
+
+```{r}
+#| echo: false
+options(warn.conflicts = FALSE)
+library(dplyr)
+library(plotly)
+library(scales)  # For percent formatting
+
+# Calculate counts and correctly calculate proportions within each knowledge group
+state_knowledge_counts <- unique_merged_data %>%
+  group_by(knowledge, state) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  group_by(knowledge) %>%  # Regroup by knowledge to sum counts for proportion calculation
+  mutate(Proportion = Count / sum(Count))  # Calculate proportion within each knowledge group
+
+# Creating custom tooltip content with correctly formatted proportions
+state_knowledge_counts$Tooltip <- paste(
+  "Knowledge: ", state_knowledge_counts$knowledge,
+  "<br>State: ", state_knowledge_counts$state,
+  "<br>Proportion: ", percent(state_knowledge_counts$Proportion)
+)
+
+# Convert ggplot to plotly with customized tooltips using plotly directly
+interactive_plot <- plot_ly(data = state_knowledge_counts, x = ~knowledge, y = ~Count, type = 'bar', color = ~state,
+                            hoverinfo = 'text',
+                            text = ~Tooltip,
+                            colors = RColorBrewer::brewer.pal(10, "Set3")) %>%
+  layout(
+    yaxis = list(title = 'Count'), 
+    barmode = 'stack',
+    title = "Performance on Knowledge type"
+  )
+
+# Display the plot
+interactive_plot
+
+```
+
+-   `m3D1v` and `y9W5d` have the highest overall counts, indicating these knowledge areas are frequently assessed.
+
+```{=html}
+<!-- -->
+```
+-   **Dominant Performance States**:
+
+    **Absolutely_Correct**: Significant portions of the counts for `m3D1v`, `g7R2j`, and `y9W5d` are marked as Absolutely_Correct.
+
+    **Partially_Correct**: Notable in all knowledge types but particularly higher in `g7R2j` and `k4W1c`..
+
+-   Knowledge types like `g7R2j` and `k4W1c` have a higher proportion of Partially_Correct responses, indicating that students have some understanding but not complete mastery.
+
+## Conclusion:
+
+-   The distribution of performance states (Absolutely Correct, Absolutely Error, Partially Correct, and various error states) across knowledge types indicates that some areas are well-understood, while others present significant challenges.
+
+-   Certain knowledge types like `m3D1v` and `y9W5d` show high correctness, indicating these areas are well mastered knowledge.
+
+-   There is considerable variation in the time spent on different questions. The outliers in time consumption could indicate more complex questions or potential issues with the time of submitting questions
+
+-   Scores vary significantly across questions, with many questions showing a wide range of scores from 0 to 3. Some questions have consistent low scores, indicating they might be too difficult or poorly understood by the learners.
