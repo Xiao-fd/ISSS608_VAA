@@ -1,0 +1,59 @@
+---
+title: "In-class_Ex09"
+---
+
+```{r}
+pacman::p_load(scatterplotMatrix, parallePlot, cluster, factoextra, tidyverse)
+```
+
+```{r}
+wine <- read_csv("data/wine_quality.csv")
+```
+
+```{r}
+ggplot(data = wine,
+       aes(x = type)) +
+  geom_bar()
+```
+
+```{r}
+whitewine <- wine %>%
+  filter(type == "white") %>%
+  select(c(1:11))
+```
+
+```{r}
+scatterPlotMatrix(whitewine,
+                  corrPlotType = "Text",
+                  distribType = 1,
+                  width = 500,
+                  height = 500)
+```
+
+compute gap statistic
+
+```{r}
+set.seed(1234)
+gap_stat <- clusGap(whitewine,
+                    FYN = kmeans,
+                    nstart = 25,
+                    K.max = 8,
+                    B = 50)
+
+print(gap_stat, method = "firstmax")
+```
+
+```{r}
+set.seed(123)
+kmeans4 <- kmeans(whitewine, 4, nstart = 25)
+print(kmeans4)
+```
+
+```{r}
+fviz_cluster(kmeans4, data = whitewine)
+```
+
+```{r}
+whitewine <- whitewine %<%
+  mutate(Cluster = kmeans$cluster
+```

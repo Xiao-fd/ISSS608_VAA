@@ -1,0 +1,630 @@
+---
+title: "Take-Home Exercise 03"
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## **Our Task**
+
+Analyze the log records of learners' question-answering behaviors,
+quantitatively assess the degree of knowledge mastery based on
+multi-dimensional attributes such as answer scores and answer status,
+and identify weak links in their knowledge system. (It is recommended
+that participants answer this question with no more than 800 words and
+no more than 5 pictures)
+
+## **The Data**
+
+Data_TitleInfo Data_SubmitRecord(SubmitRecord-Class 1-15)
+Data_StudentInfo
+
+# **1. Getting Started**
+
+## **1.1 Loading R packages**
+
+We load the following R packages using the `pacman::p_load()` function:
+
+```{r}
+pacman::p_load(geojsonR,rjson,sf, dplyr,tidyr,stringr,readr,fs,purrr,ggplot2, plotly, ggstatsplot,igraph,lubridate,hms, vcd, ggalluvial, ggforce)
+
+```
+
+## **1.2 Importing data**
+
+The code chunk below imports the dataset into R environment by using
+[*`read_csv()`*](https://readr.tidyverse.org/reference/read_delim.html)
+function of [`readr`](https://readr.tidyverse.org/) package. **readr**
+is one of the tidyverse package.
+
+Read the individual CSV files into data frames. Check that the structure
+of each data frame is the same.
+
+```{r}
+df_TitleInfo <- read_csv("data/Data_TitleInfo.csv")
+```
+
+```{r}
+df_StudentInfo <- read_csv("data/Data_StudentInfo.csv")
+```
+
+```{r}
+csv_file_list <- dir('data/Data_SubmitRecord')
+csv_file_list <- paste0("./data/Data_SubmitRecord/",csv_file_list)
+
+
+df_StudentRecord <- NULL
+for (file in csv_file_list) { # for every file...
+  file <- read_csv(file)
+    df_StudentRecord <- rbind(df_StudentRecord, file) # then stick together by rows
+}
+df_StudentRecord %>% glimpse()
+```
+
+```{r}
+# Step 1: Identify students with multiple classes
+students_multiple_classes <- df_StudentRecord %>%
+  group_by(student_ID) %>%
+  summarise(unique_classes = n_distinct(class)) %>%
+  filter(unique_classes > 1)
+
+# Step 2: Identify the correct class for each student (the class with the highest frequency)
+correct_classes <- df_StudentRecord %>%
+  filter(student_ID %in% students_multiple_classes$student_ID) %>%
+  group_by(student_ID, class) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  slice(1) %>%
+  select(student_ID, correct_class = class)
+
+# Step 3: Replace wrong class values
+df_StudentRecord <- df_StudentRecord %>%
+  left_join(correct_classes, by = "student_ID") %>%
+  mutate(class = ifelse(!is.na(correct_class), correct_class, class)) %>%
+  select(-correct_class)
+
+# Display the updated dataframe
+print(df_StudentRecord)
+
+```
+
+```{r}
+
+# Identify students with multiple classes
+students_multiple_classes <- df_StudentRecord %>%
+  group_by(student_ID) %>%
+  summarise(unique_classes = n_distinct(title_ID)) %>%
+  filter(unique_classes > 1)
+
+# Display the results
+print(students_multiple_classes)
+```
+
+```{r}
+#remove index column
+df_StudentRecord <- df_StudentRecord %>% select(-1)
+df_TitleInfo <- df_TitleInfo %>% select(-1)
+df_StudentInfo <- df_StudentInfo %>% select(-1)
+
+```
+
+```{r}
+summary(df_StudentRecord)
+summary (df_TitleInfo)
+summary (df_StudentInfo)
+```
+
+```{r}
+# Convert time from timestamp to POSIXct
+df_StudentRecord$time_change <- as.POSIXct(df_StudentRecord$time, origin="1970-01-01", tz="UTC")
+
+df_StudentRecord <- df_StudentRecord %>%
+  mutate(
+    time_change = ymd_hms(time_change),
+    date = as.Date(time_change),
+    time = as_hms(format(time_change, "%H:%M:%S")),
+    score = as.factor(score),
+    timeconsume = as.numeric(timeconsume)
+  ) 
+
+df_TitleInfo <- df_TitleInfo %>%
+  mutate (
+    score = as.factor(score)
+  )
+```
+
+Check missing values
+
+```{r}
+missing_students <- anti_join(df_StudentRecord, df_StudentInfo, by = "student_ID")
+
+# Display the missing student IDs
+missing_student_ids <- missing_students %>% select(student_ID) %>% distinct()
+print(missing_student_ids)
+
+
+unique(df_StudentRecord$state)
+
+df_StudentRecord <- df_StudentRecord %>%
+  filter (state != '�������')%>%
+  filter (class != "class")
+```
+
+```{r}
+# Merge StudentInfo with SubmitRecord based on student_ID
+merged_data_1 <- merge(df_StudentRecord, df_StudentInfo, by = "student_ID")
+# Merge TitleInfo with the already merged data based on title_ID
+merged_data <- merge(merged_data_1, df_TitleInfo, by = "title_ID")
+
+merged_data <- merged_data %>%
+  rename(
+    actual_score = score.x,
+    question_score = score.y
+  )
+```
+
+```{r}
+summary (merged_data)
+```
+
+Distributions
+
+```{r}
+create_bar_plot <- function(data, variable, title) {
+  p <- ggplot(data, aes_string(x = variable)) +
+    geom_bar(fill = "steelblue") +
+    labs(title = title, x = variable, y = "Count") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  print(p)
+  ggsave(paste0(title, ".png"), plot = p, width = 10, height = 8, dpi = 300)
+}
+
+# Generate bar plots
+create_bar_plot(merged_data, "class", "Distribution of Class")
+create_bar_plot(merged_data, "major", "Distribution of Major")
+create_bar_plot(merged_data, "sex", "Distribution of Sex")
+create_bar_plot(merged_data, "knowledge", "Distribution of Knowledge")
+create_bar_plot(merged_data, "sub_knowledge", "Distribution of Sub-Knowledge")
+create_bar_plot(merged_data, "state", "Distribution of State")
+create_bar_plot(merged_data, "title_ID", "Distribution of Title ID")
+create_bar_plot(merged_data, "method", "Distribution of method")
+```
+
+```{r}
+merged_data$actual_score <- as.numeric(as.character(merged_data$actual_score))
+merged_data$timeconsume <- as.numeric(as.character(merged_data$timeconsume))
+merged_data$age <- as.numeric(as.character(merged_data$age))
+# Histogram for actual_score
+ggplot(merged_data, aes(x = actual_score)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  labs(title = "Distribution of Actual Scores", x = "Actual Score", y = "Frequency") +
+  theme_minimal()
+ggsave("distribution_of_actual_scores.png", width = 10, height = 8, dpi = 300)
+
+# Histogram for timeconsume
+ggplot(merged_data, aes(x = timeconsume)) +
+  geom_histogram(bins = 30, fill = "lightgreen") +
+  labs(title = "Distribution of Time Consumed", x = "Time Consumed", y = "Frequency") +
+   xlim(c(0, 60))
+  theme_minimal()
+ggsave("distribution_of_timeconsumed.png", width = 10, height = 8, dpi = 300)
+
+# Histogram for age
+ggplot(merged_data, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  labs(title = "Distribution of Age", x = "Age", y = "Frequency") +
+  xlim(c(18, 25)) + 
+  theme_minimal()
+ggsave("distribution_of_age.png", width = 10, height = 8, dpi = 300)
+
+```
+
+```{r}
+library(ggplot2)
+
+# Plotting histogram of actual scores
+ggplot(merged_data, aes(x = actual_score)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  facet_wrap(~knowledge) +
+  labs(title = "Distribution of Actual Scores by Knowledge Type", x = "Actual Score", y = "Count")
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(merged_data, aes(x = actual_score)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  facet_wrap(~sub_knowledge) +
+  labs(title = "Distribution of Actual Scores by SubKnowledge", x = "Actual Score", y = "Count")
+
+```
+
+attempts for knowledge and subknowledge
+
+```{r}
+# Calculate the number of attempts for each knowledge and sub_knowledge area
+attempts_count <- merged_data %>%
+  group_by(knowledge, sub_knowledge) %>%
+  summarise(number_of_attempts = n())
+
+# View the result
+print(attempts_count)
+
+# Plot the number of attempts for each knowledge area
+ggplot(attempts_count, aes(x = knowledge, y = number_of_attempts, fill = sub_knowledge)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Number of Attempts per Knowledge and Sub-knowledge Area",
+       x = "Knowledge Area",
+       y = "Number of Attempts",
+       fill = "Sub-Knowledge Area") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(hjust = 0.5))
+```
+
+score & state
+
+```{r}
+library(ggplot2)
+
+# Bar plot to show the count of each actual_score within each state
+ggplot(merged_data, aes(x = state, fill = factor(actual_score))) +
+  geom_bar(position = "dodge") +
+  labs(title = "Distribution of Actual Scores by State", x = "State", y = "Count", fill = "Actual Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+Heatmap for Score & state
+
+```{r}
+library(reshape2)
+score_state_table <- table(merged_data$state, merged_data$actual_score)
+
+score_state_melted <- melt(score_state_table)
+
+# Plot heatmap
+ggplot(score_state_melted, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "red") +
+  labs(title = "Heatmap of Actual Score by State", x = "State", y = "Actual Score", fill = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("heatmap_scores_by_state.png", width = 12, height = 8, dpi = 300)
+
+```
+
+Score & method
+
+```{r}
+library(ggplot2)
+
+# Grouped bar plot to show the count of each actual_score within each method
+ggplot(merged_data, aes(x = method, fill = factor(actual_score))) +
+  geom_bar(position = "dodge") +
+  labs(title = "Distribution of Actual Scores by Method", x = "Method", y = "Count", fill = "Actual Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+method & knowledge
+
+```{r}
+
+table_method_knowledge <- table(merged_data$method, merged_data$knowledge)
+print(table_method_knowledge)
+ggplot(merged_data, aes(x = knowledge, fill = method)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Distribution of Method by Knowledge", x = "Knowledge", y = "Count", fill = "Method") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+
+```
+
+```{r}
+summary_stats <- merged_data %>%
+  group_by(method) %>%
+  summarise(Mean = mean(timeconsume, na.rm = TRUE),
+            Median = median(timeconsume, na.rm = TRUE),
+            IQR = IQR(timeconsume, na.rm = TRUE),
+            Max = max(timeconsume, na.rm = TRUE),
+            Min = min(timeconsume, na.rm = TRUE))
+```
+
+Knowlege & subknowledge
+
+```{r}
+table_knowledge_subknowledge <- table(merged_data$knowledge, merged_data$sub_knowledge)
+print(table_knowledge_subknowledge)
+
+melted_data <- melt(table_knowledge_subknowledge)
+
+# Create  heatmap
+ggplot(melted_data, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(title = "Heatmap of Knowledge vs. Sub-Knowledge", x = "Knowledge", y = "Sub-Knowledge") +
+  theme_minimal()
+
+```
+
+Sub-knowledge areas such as m3D1v_r1d7fr3l under m3D1v and
+r8S3g_l0p5viby under r8S3g have darker shades, indicating they are
+significant sub-knowledge areas. This could point to areas where
+students may need more focus or where these topics are more complex and
+thus require more interaction.
+
+```{r}
+```
+
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Create the box plot
+ggplot(merged_data, aes(x = knowledge, y = actual_score, fill = knowledge)) +
+  geom_boxplot() +
+  labs(title = "Distribution of Actual Scores by Knowledge", x = "Knowledge", y = "Actual Score") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"  # Remove legend if knowledge categories are many and self-explanatory
+  )
+
+```
+
+```{r}
+# Box plot for actual_score grouped by sub_knowledge
+ggplot(merged_data, aes(x=sub_knowledge, y=actual_score, fill=sub_knowledge)) +
+  geom_boxplot() +
+  labs(title="Distribution of Actual Scores by Sub-Knowledge", x="Sub-Knowledge", y="Actual Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+```{r}
+ggplot(merged_data, aes(x = title_id, y = timeconsume, fill = title_ID)) +
+  geom_violin() +
+  labs(title = "Violin Plot of Time Consumed by Title ID", x = "Title ID", y = "Time Consumed") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate labels for better readability
+
+```
+
+\`\`\`{r}##sample code \# Load necessary libraries
+install.packages("ggplot2") install.packages("dplyr")
+install.packages("ggsignif")
+
+library(ggplot2) library(dplyr) library(ggsignif)
+
+# Sample data
+
+data \<- data.frame( Order = rep(c("Artio", "Carn", "Prim", "Rod",
+"Others"), each = 20), BrainFraction = c( rnorm(20, mean = 60, sd = 10),
+rnorm(20, mean = 45, sd = 15), rnorm(20, mean = 70, sd = 10), rnorm(20,
+mean = 50, sd = 10), rnorm(20, mean = 55, sd = 15) ) )
+
+# Create the box plot
+
+p \<- ggplot(data, aes(x = Order, y = BrainFraction, fill = Order)) +
+geom_boxplot() + geom_jitter(width = 0.2, alpha = 0.6) +
+theme_minimal() + labs(title = "Box Plot of Brain Fraction by Order", y
+= "Brain Fraction (%)", x = "Order") + scale_fill_brewer(palette =
+"Set3")
+
+# Add significance annotations
+
+p + geom_signif(comparisons = list(c("Artio", "Carn"), c("Carn",
+"Prim"), c("Prim", "Rod")), map_signif_level = TRUE, step_increase =
+0.1)
+
+\`\`\`
+
+```{r}
+average_scores <- merged_data %>%
+  group_by(student_ID) %>%
+  summarize(average_actual_score = mean(actual_score, na.rm = TRUE))
+
+# Plot the average scores
+ggplot(average_scores, aes(x = student_ID, y = average_actual_score)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Average Actual Score per Student", x = "Student ID", y = "Average Actual Score")
+
+```
+
+```{r}
+ggplot(average_scores, aes(x = reorder(student_ID, average_actual_score), y = average_actual_score)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Average Actual Score per Student",
+       x = "Student ID",
+       y = "Average Actual Score") +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5))
+```
+
+attempts for knowledge and subknowledge
+
+```{r}
+# Calculate the number of attempts for each knowledge and sub_knowledge area
+attempts_count <- merged_data %>%
+  group_by(knowledge, sub_knowledge) %>%
+  summarise(number_of_attempts = n())
+
+# View the result
+print(attempts_count)
+
+# Plot the number of attempts for each knowledge area
+ggplot(attempts_count, aes(x = knowledge, y = number_of_attempts, fill = sub_knowledge)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Number of Attempts per Knowledge and Sub-knowledge Area",
+       x = "Knowledge Area",
+       y = "Number of Attempts",
+       fill = "Sub-Knowledge Area") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(hjust = 0.5))
+```
+
+Compare the average actual_score and other metrics across different
+majors.
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+
+
+# Calculate the average actual_score and other metrics for each major
+metrics_by_major <- merged_data %>%
+  group_by(major) %>%
+  summarise(
+    average_actual_score = mean(actual_score, na.rm = TRUE),
+    average_timeconsume = mean(timeconsume, na.rm = TRUE),
+    average_memory = mean(memory, na.rm = TRUE),
+    count_attempts = n()
+  )
+
+# View the result
+print(metrics_by_major)
+
+# Plot the average actual_score across different majors
+ggplot(metrics_by_major, aes(x = reorder(major, -average_actual_score), y = average_actual_score)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Average Actual Score by Major",
+       x = "Major",
+       y = "Average Actual Score") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 2, size = 10),
+        plot.title = element_text(hjust = 0.5))
+
+# Plot the average timeconsume across different majors
+ggplot(metrics_by_major, aes(x = reorder(major, -average_timeconsume), y = average_timeconsume)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Average Time Consumed by Major",
+       x = "Major",
+       y = "Average Time Consumed") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(hjust = 0.5))
+
+# Plot the average memory used across different majors
+ggplot(metrics_by_major, aes(x = reorder(major, -average_memory), y = average_memory)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Average Memory Used by Major",
+       x = "Major",
+       y = "Average Memory Used") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(hjust = 0.5))
+
+# Plot the count of attempts across different majors
+ggplot(metrics_by_major, aes(x = reorder(major, -count_attempts), y = count_attempts)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Number of Attempts by Major",
+       x = "Major",
+       y = "Number of Attempts") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+# Ensure actual_score, timeconsume, and age are numeric
+merged_data$actual_score <- as.numeric(as.character(merged_data$actual_score))
+merged_data$timeconsume <- as.numeric(as.character(merged_data$timeconsume))
+merged_data$age <- as.numeric(as.character(merged_data$age))
+
+# Create bar plots
+p1 <- ggplot(merged_data, aes(x = class)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Class", x = "Class", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p2 <- ggplot(merged_data, aes(x = major)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Major", x = "Major", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p3 <- ggplot(merged_data, aes(x = sex)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Sex", x = "Sex", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p4 <- ggplot(merged_data, aes(x = knowledge)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Knowledge", x = "Knowledge", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p5 <- ggplot(merged_data, aes(x = sub_knowledge)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Sub-Knowledge", x = "Sub-Knowledge", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p6 <- ggplot(merged_data, aes(x = state)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of State", x = "State", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p7 <- ggplot(merged_data, aes(x = title_ID)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Title ID", x = "Title ID", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6))
+
+p8 <- ggplot(merged_data, aes(x = method)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Method", x = "Method", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+# Create histograms
+p9 <- ggplot(merged_data, aes(x = actual_score)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  labs(title = "Distribution of Actual Scores", x = "Actual Score", y = "Frequency") +
+  theme_minimal()
+
+p10 <- ggplot(merged_data, aes(x = timeconsume)) +
+  geom_histogram(bins = 30, fill = "lightgreen") +
+  labs(title = "Distribution of Time Consumed", x = "Time Consumed", y = "Frequency") +
+  xlim(c(0, 60)) +
+  theme_minimal()
+
+p11 <- ggplot(merged_data, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "steelblue") +
+  labs(title = "Distribution of Age", x = "Age", y = "Frequency") +
+  xlim(c(18, 25)) + 
+  theme_minimal()
+
+# Combine the plots using patchwork
+combined_plot <- (p1 | p2 | p3) / (p4 | p5 | p6) / (p7 | p8 | p9) / p10 / p11
+
+# Display the combined plot
+print(combined_plot)
+
+# Save the combined plot
+ggsave("combined_distribution_plots.png", plot = combined_plot, width = 20, height = 30, dpi = 300)
+
+```
